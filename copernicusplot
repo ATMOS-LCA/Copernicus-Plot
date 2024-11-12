@@ -1,0 +1,79 @@
+# Importar pacotes necessários
+import numpy as np
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import pandas as pd
+import xarray as xr
+import imageio
+
+# Caminho do arquivo NetCDF
+file_path = '/content/drive/MyDrive/data_sfc.nc'
+
+# Carregar o dataset
+data = xr.open_dataset(file_path)
+
+# Definir o período de tempo para a animação( Precisa ser Alterado no Padrão "202x=MM=DD"
+start_date = '2024-10-15'
+end_date = '2024-10-20'
+
+# Converter datas para manipulação e definir intervalo de dias
+date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+
+# Coordenadas e extensões para zoom das cidades
+cities_info = {
+    "Campo Grande": {"coords": (-20.4697, -54.6201), "extent": [-56, -53, -22, -19]},
+    "Corumbá": {"coords": (-19.0086, -57.6514), "extent": [-59, -56, -21, -17]},
+    "Dourados": {"coords": (-22.2231, -54.8050), "extent": [-56, -53, -23.5, -21]},
+    "Três Lagoas": {"coords": (-20.7877, -51.7044), "extent": [-53, -50, -22, -19.5]},
+    "Ponta Porã": {"coords": (-22.5372, -55.7271), "extent": [-57, -54, -23.5, -21]},
+}
+
+# Loop por cada cidade para criar uma animação individual
+for city, info in cities_info.items():
+    coords = info["coords"]
+    extent = info["extent"]
+
+    # Lista para armazenar frames da animação para a cidade atual
+    frames = []
+
+    # Loop por cada data no intervalo
+    for date in date_range:
+        # Selecionar a variável de profundidade óptica para a data
+        aod_snapshot = data['aod550'].sel(forecast_reference_time=date.strftime('%Y-%m-%d'))
+
+        # Configurar o gráfico
+        fig = plt.figure(figsize=(8, 6))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        ax.set_extent(extent, crs=ccrs.PlateCarree())  # Definir o zoom para a cidade
+
+        # Definir níveis para AOD e plotar
+        levels = np.linspace(0, 1, 500)
+        plt.contourf(data['longitude'], data['latitude'], aod_snapshot[0, :, :], levels=levels, cmap='jet', transform=ccrs.PlateCarree(), extend='both')
+
+        # Adicionar bordas e limites
+        ax.add_feature(cfeature.BORDERS, linestyle=':', edgecolor='black')
+        states_provinces = cfeature.NaturalEarthFeature(category='cultural', name='admin_1_states_provinces_lines', scale='50m', facecolor='none')
+        ax.add_feature(states_provinces, edgecolor='black', linewidth=0.5)
+
+        # Marcar a cidade no mapa
+        ax.plot(coords[1], coords[0], 'o', color='red', markersize=5, transform=ccrs.PlateCarree())
+        ax.text(coords[1] + 0.1, coords[0], city, transform=ccrs.PlateCarree(), fontsize=10, color='red')
+
+        # Barra de cores
+        plt.colorbar(label='Aerosol Optical Depth at 550 nm', orientation='vertical')
+
+        # Título com a data do snapshot
+        plt.title(f'{city} - Aerosol Optical Depth (AOD 550 nm) on {date.strftime("%d/%m/%Y")}')
+
+        # Salvar o frame temporário
+        frame_path = f'/content/drive/MyDrive/{city}_frame_{date.strftime("%Y%m%d")}.png'
+        plt.savefig(frame_path, dpi=100)
+        frames.append(imageio.imread(frame_path))
+        plt.close()
+
+    # Criar a animação GIF para a cidade
+    output_gif_path = f'/content/drive/MyDrive/{city}_AOD_animation.gif'
+    imageio.mimsave(output_gif_path, frames, fps=1)
+
+    print(f"Animação GIF criada com sucesso para {city}: {output_gif_path}")
